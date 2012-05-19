@@ -72,9 +72,9 @@ namespace po = boost::program_options;
  */
 void missingParam ( std::string param )
 {
-    trace.error() <<" Parameter: "<<param<<" is required..";
-    trace.info() <<std::endl;
-    exit ( 1 );
+  trace.error() <<" Parameter: "<<param<<" is required..";
+  trace.info() <<std::endl;
+  exit ( 1 );
 }
 
 
@@ -89,7 +89,7 @@ int main( int argc, char** argv )
     ( "input,i", po::value<std::string>(), "Input vol file." )
     ( "output,o", po::value<std::string>(), "Ouput filename without any extension" )
     ( "vol,v",  "Export the skeleton as a vol file (notyetimplemented)" )
-    ( "graph,g", "Export the skeleton as a weighted graph" )
+    ( "graph,g", "Export the skeleton as a weighted graph (both DOT format and built-in graph syntax)" )
     ( "viewer", "Display the skeleton using DGtal::Viewer3D" );
  
 
@@ -124,7 +124,7 @@ int main( int argc, char** argv )
   Image image = VolReader<Image>::importVol ( filename );
 
   trace.beginBlock("DT Computation");
-  typedef  DistanceTransformation<Image, 0> DTL2;
+  typedef  DistanceTransformation<Image, 2> DTL2;
   DTL2 dtL2;
   
   DTL2::OutputImage resultL2 = dtL2.compute ( image );
@@ -179,7 +179,7 @@ int main( int argc, char** argv )
         }
       trace.info() << "Nb simple points : "<<nb_simple<<std::endl;
       ++layer;
-     }
+    }
   while ( nb_simple != 0 );
   trace.endBlock();
   
@@ -193,7 +193,7 @@ int main( int argc, char** argv )
                               boost::property<boost::vertex_name_t, std::string> > VertexProperty;
       
       typedef boost::adjacency_list<boost::setS, boost::vecS, boost::undirectedS
-                                     > Graph;
+                                    > Graph;
       typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
       typedef std::pair<int, int> Edge;
       typedef std::set < Edge > Edges;
@@ -247,8 +247,17 @@ int main( int argc, char** argv )
       for (tie(ei, ei_end) = boost::edges(G); ei != ei_end; ++ei)
         out<< index[source(*ei, G)] << " "<< index[target(*ei, G)] << std::endl;
       // ...
-
       out.close();
+      
+      //Exporting the skeleton
+      std::ofstream out2((outputfilename+".dot").c_str());
+      
+      out2 << "graph G {"<<std::endl;
+    
+      for (tie(ei, ei_end) = boost::edges(G); ei != ei_end; ++ei)
+        out2<< "   "<< index[source(*ei, G)] << " -- "<< index[target(*ei, G)] <<";"<< std::endl;
+      out2<<"}"<<std::endl;
+      out2.close();
       trace.endBlock();
     }
           
