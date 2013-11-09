@@ -35,6 +35,10 @@
 
 #include "DGtal/images/ImageSelector.h"
 
+#include "DGtal/topology/LightImplicitDigitalSurface.h"
+#include "DGtal/topology/DigitalSurface.h"
+#include "DGtal/images/imagesSetsUtils/IntervalForegroundPredicate.h"
+
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
@@ -92,7 +96,6 @@ int main( int argc, char** argv )
   int thresholdMin = vm["thresholdMin"].as<int>();
   int thresholdMax = vm["thresholdMax"].as<int>();
 
-  Board3D<> board;
 
   typedef ImageSelector<Domain, unsigned char>::Type Image;
   string extension = inputFilename.substr(inputFilename.find_last_of(".") + 1);
@@ -109,23 +112,54 @@ int main( int argc, char** argv )
       Image image = GenericReader<Image>::import (inputFilename );
       trace.info() << "Image loaded: "<<image<< std::endl;
       Domain domain = image.domain();
-      for(Domain::ConstIterator it = domain.begin(), itend=domain.end(); it!=itend; ++it){
+
+      IntervalForegroundPredicate<Image> simplePredicate ( image, thresholdMin, thresholdMax );
+      KSpace ks;
+      bool space_ok = ks.init ( image.domain().lowerBound(),
+                                image.domain().upperBound(), true );
+      if ( !space_ok )
+        {
+          trace.error() << "Error in the Khamisky space construction."<<std::endl;
+          return 2;
+        }
+
+      Board3D<Z3i::Space, Z3i::KSpace> board(ks);
+
+      typedef SurfelAdjacency<KSpace::dimension> MySurfelAdjacency;
+      MySurfelAdjacency surfAdj ( true ); // interior in all directions.
+
+      //Set up digital surface.
+      typedef LightImplicitDigitalSurface<KSpace, IntervalForegroundPredicate<Image>  > MyDigitalSurfaceContainer;
+      typedef DigitalSurface<MyDigitalSurfaceContainer> MyDigitalSurface;
+      SCell bel = Surfaces<KSpace>::findABel ( ks, simplePredicate );
+
+      MyDigitalSurfaceContainer* ptrSurfContainer =
+        new MyDigitalSurfaceContainer ( ks, simplePredicate, surfAdj, bel );
+      MyDigitalSurface digSurf ( ptrSurfContainer ); // acquired
+
+      for(MyDigitalSurface::ConstIterator it = digSurf.begin(), itend = digSurf.end();
+          it != itend; ++it)
+        board << *it;
+
+
+      /*      for(Domain::ConstIterator it = domain.begin(), itend=domain.end(); it!=itend; ++it){
         unsigned char  val= image( (*it) );
         if(val<=thresholdMax && val >=thresholdMin){
           board << *it;
-        }
-      }
+          }*/
+      board.saveOBJ(outputFilename);
     }
   else
     if(extension=="sdp")
       {
+        Board3D<> board;
         vector<Z3i::Point> vectVoxels = PointListReader<Z3i::Point>::getPointsFromFile(inputFilename);
-        for(int i=0;i< vectVoxels.size(); i++){
+        for(int i=0;i< vectVoxels.size(); i++)
           board << vectVoxels.at(i);
-        }
+
+        board.saveOBJ(outputFilename);
       }
 
 
-  board.saveOBJ(outputFilename);
   return 0;
 }
