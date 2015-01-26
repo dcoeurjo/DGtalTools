@@ -70,10 +70,18 @@
 #include "DGtal/geometry/surfaces/estimation/estimationFunctors/MongeJetFittingGaussianCurvatureEstimator.h"
 #include "DGtal/geometry/surfaces/estimation/estimationFunctors/MongeJetFittingPrincipalCurvaturesEstimator.h"
 
+
+#include "DGtal/shapes/ShapeGeometricFunctors.h"
+#include "DGtal/geometry/surfaces/estimation/TrueDigitalSurfaceLocalEstimator.h"
+#include "DGtal/geometry/surfaces/estimation/estimationFunctors/IntegralInvariantMeanCurvatureFromSurfaceAreaEstimator.h"
+
+
+
 using namespace DGtal;
 using namespace functors;
 
 typedef std::pair<double,double> PrincipalCurvatures;
+
 
 template < typename Shape, typename KSpace, typename ConstIterator, typename OutputIterator >
 void
@@ -160,6 +168,7 @@ compareShapeEstimators( const std::string & filename,
                         const double & alpha,
                         const std::string & options,
                         const std::string & properties,
+                        const std::string & IISurface,
                         const bool & lambda_optimized,
                         double noiseLevel = 0.0 )
 {
@@ -503,10 +512,20 @@ compareShapeEstimators( const std::string & filename,
                     CanonicSCellEmbedder<KSpace> embedder( K );
                     FunctorMean estimatorH( embedder, h );
                     ConvFunctor convFunc(1.0);
-                    ReporterH reporterH( surf, Z3i::l2Metric, estimatorH, convFunc);
+                    ReporterH reporterH;
                     c.startClock();
-                    reporterH.init( h , re / h  );
-
+                    range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                    ibegin = range->begin();
+                    iend = range->end();
+                    reporterH.init( h , ibegin, iend  );
+                    reporterH.setParams(Z3i::l2Metric, estimatorH, convFunc, re/h);
+                    reporterH.attach(surf);
+                    delete range;
+                    
+                    range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                    ibegin = range->begin();
+                    iend = range->end();
+                    
                     char full_filename[360];
                     sprintf( full_filename, "%s%s", filename.c_str(), "_MongeJetFitting_mean.dat" );
                     std::ofstream file( full_filename );
@@ -541,12 +560,16 @@ compareShapeEstimators( const std::string & filename,
                     CanonicSCellEmbedder<KSpace> embedder( K );
                     FunctorGaussian estimatorK( embedder, h );
                     ConvFunctor convFunc(1.0);
-                    ReporterK reporterK(surf, Z3i::l2Metric, estimatorK, convFunc);
+                    ReporterK reporterK;
                     c.startClock();
-                    reporterK.init( h , re / h  );
-
-                    //typename ReporterK::SurfelConstIterator aaabegin = surf.begin();
-                    //typename ReporterK::SurfelConstIterator aaaend = surf.end();
+                    range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                    ibegin = range->begin();
+                    iend = range->end();
+                    reporterK.init( h , ibegin, iend  );
+                    reporterK.setParams(Z3i::l2Metric, estimatorK, convFunc, re/h);
+                    reporterK.attach(surf);
+                    delete range;
+                    
 
                     range = new VisitorRange( new Visitor( surf, *surf.begin() ));
                     ibegin = range->begin();
@@ -580,10 +603,17 @@ compareShapeEstimators( const std::string & filename,
                     CanonicSCellEmbedder<KSpace> embedder( K );
                     FunctorPrincCurv estimatorK( embedder, h );
                     ConvFunctor convFunc(1.0);
-                    ReporterK reporterK(surf, Z3i::l2Metric, estimatorK, convFunc);
+                   ReporterK reporterK;
                     c.startClock();
-                    reporterK.init( h , re / h  );
 
+                    range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                    ibegin = range->begin();
+                    iend = range->end();
+                    reporterK.init( h , ibegin, iend  );
+                    reporterK.setParams(Z3i::l2Metric, estimatorK, convFunc, re/h);
+                    reporterK.attach(surf);
+                    delete range;
+                    
                     range = new VisitorRange( new Visitor( surf, *surf.begin() ));
                     ibegin = range->begin();
                     iend = range->end();
@@ -617,6 +647,67 @@ compareShapeEstimators( const std::string & filename,
 
                     trace.endBlock();
                 }
+            }
+               // II surface area
+            if (( options.at( 3 ) != '0' ) && (properties.at( 0 ) == '1'))
+            {
+              if( IISurface.at( 0 ) == '1' )
+                {
+                  trace.beginBlock( "Integral Invariant from surface area (true normal vectors)" );
+
+                  //true normal vector estimator
+                  typedef ShapeGeometricFunctors::ShapeNormalVectorFunctor<Shape> NormalFunctor;
+                  typedef TrueDigitalSurfaceLocalEstimator<Z3i::KSpace, Shape, NormalFunctor> TrueNormalEstimator;
+                  TrueNormalEstimator true_estimator;
+                  CanonicSCellEmbedder<KSpace> embedder( K );
+
+                  true_estimator.setParams( K, NormalFunctor() ); // K is some KSpace
+                  true_estimator.attach( *aShape );                 // shape is some ImplicitShape
+                  range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                  ibegin = range->begin();
+                  iend = range->end();     
+                  true_estimator.init( h, ibegin, iend ); // surface is a digital surface.
+
+                  //II surface area
+                  typedef functors::IntegralInvariantMeanCurvatureFromSurfaceAreaEstimator<SCell, CanonicSCellEmbedder<KSpace> , TrueNormalEstimator> Functor;
+                  typedef functors::ConstValue< double > ConvFunctor;
+                  typedef LocalEstimatorFromSurfelFunctorAdapter<Boundary, Z3i::L2Metric, Functor, ConvFunctor> Reporter;
+
+                  Functor meancurvature(embedder,h, re ,true_estimator);
+                  ConvFunctor convFunc(1.0);//default conv functor
+                                            //(not used)
+                  Reporter reporter;
+                  reporter.attach(surf);
+                  reporter.setParams(Z3i::l2Metric, meancurvature , convFunc, re/h);
+
+                  delete range;
+                  range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                  ibegin = range->begin();
+                  iend = range->end();  
+                  reporter.init(h, ibegin, iend);
+                  
+                  char full_filename[360];
+                  sprintf( full_filename, "%s%s", filename.c_str(), "_IISurfaceArea_mean.dat" );
+                  std::ofstream file( full_filename );
+                  file << "# h = " << h << std::endl;
+                  file << "# Mean Curvature estimation from surfacic integral invariant and true normal vectors" << std::endl;
+                  file << "# computed kernel radius = " << re << std::endl;
+                  std::ostream_iterator< double > out_it_iiarea_mean( file, "\n" );
+                  
+                  range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                  ibegin = range->begin();
+                  iend = range->end();
+
+                  reporter.eval(ibegin, iend , out_it_iiarea_mean);
+                  double IIArea = c.stopClock();
+                  file << "# time = " << IIArea << std::endl;
+                  file.close();
+                  delete range;
+                  
+                  
+                  trace.endBlock();
+                }
+                
             }
         }
         else // no noise
@@ -933,10 +1024,20 @@ compareShapeEstimators( const std::string & filename,
                     CanonicSCellEmbedder<KSpace> embedder( K );
                     FunctorMean estimatorH( embedder, h );
                     ConvFunctor convFunc(1.0);
-                    ReporterH reporterH(surf, Z3i::l2Metric, estimatorH, convFunc);
+                    ReporterH reporterH;
                     c.startClock();
-                    reporterH.init( h , re / h  );
-
+                    range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                    ibegin = range->begin();
+                    iend = range->end();
+                    reporterH.init( h , ibegin, iend  );
+                    reporterH.setParams(Z3i::l2Metric, estimatorH, convFunc, re/h);
+                    reporterH.attach(surf);
+                    delete range;
+                    
+                    range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                    ibegin = range->begin();
+                    iend = range->end();
+                    
                     char full_filename[360];
                     sprintf( full_filename, "%s%s", filename.c_str(), "_MongeJetFitting_mean.dat" );
                     std::ofstream file( full_filename );
@@ -970,9 +1071,16 @@ compareShapeEstimators( const std::string & filename,
                     CanonicSCellEmbedder<KSpace> embedder( K );
                     FunctorGaussian estimatorK( embedder, h );
                     ConvFunctor convFunc(1.0);
-                    ReporterK reporterK(surf, Z3i::l2Metric, estimatorK, convFunc);
+                    ReporterK reporterK;
                     c.startClock();
-                    reporterK.init( h , re / h  );
+                    range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                    ibegin = range->begin();
+                    iend = range->end();
+                    reporterK.init( h , ibegin, iend  );
+                    reporterK.setParams(Z3i::l2Metric, estimatorK, convFunc, re/h);
+                    reporterK.attach(surf);
+                    delete range;
+                    
 
                     range = new VisitorRange( new Visitor( surf, *surf.begin() ));
                     ibegin = range->begin();
@@ -1006,10 +1114,17 @@ compareShapeEstimators( const std::string & filename,
                     CanonicSCellEmbedder<KSpace> embedder( K );
                     FunctorPrincCurv estimatorK( embedder, h );
                     ConvFunctor convFunc(1.0);
-                    ReporterK reporterK(surf, Z3i::l2Metric, estimatorK, convFunc);
+                    ReporterK reporterK;
                     c.startClock();
-                    reporterK.init( h , re / h  );
 
+                    range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                    ibegin = range->begin();
+                    iend = range->end();
+                    reporterK.init( h , ibegin, iend  );
+                    reporterK.setParams(Z3i::l2Metric, estimatorK, convFunc, re/h);
+                    reporterK.attach(surf);
+                    delete range;
+                    
                     range = new VisitorRange( new Visitor( surf, *surf.begin() ));
                     ibegin = range->begin();
                     iend = range->end();
@@ -1043,7 +1158,68 @@ compareShapeEstimators( const std::string & filename,
 
                     trace.endBlock();
                 }
+            }
+            
+            // II surface area
+            if (( options.at( 3 ) != '0' ) && (properties.at( 0 ) == '1'))
+            {
+              if( IISurface.at( 0 ) == '1' )
+                {
+                  trace.beginBlock( "Integral Invariant from surface area (true normal vectors)" );
 
+                  //true normal vector estimator
+                  typedef ShapeGeometricFunctors::ShapeNormalVectorFunctor<Shape> NormalFunctor;
+                  typedef TrueDigitalSurfaceLocalEstimator<Z3i::KSpace, Shape, NormalFunctor> TrueNormalEstimator;
+                  TrueNormalEstimator true_estimator;
+                  CanonicSCellEmbedder<KSpace> embedder( K );
+
+                  true_estimator.setParams( K, NormalFunctor() ); // K is some KSpace
+                  true_estimator.attach( *aShape );                 // shape is some ImplicitShape
+                  range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                  ibegin = range->begin();
+                  iend = range->end();     
+                  true_estimator.init( h, ibegin, iend ); // surface is a digital surface.
+
+                  //II surface area
+                  typedef functors::IntegralInvariantMeanCurvatureFromSurfaceAreaEstimator<SCell, CanonicSCellEmbedder<KSpace> , TrueNormalEstimator> Functor;
+                  typedef functors::ConstValue< double > ConvFunctor;
+                  typedef LocalEstimatorFromSurfelFunctorAdapter<Boundary, Z3i::L2Metric, Functor, ConvFunctor> Reporter;
+
+                  Functor meancurvature(embedder,h, re,true_estimator);
+                  ConvFunctor convFunc(1.0);//default conv functor
+                                            //(not used)
+                  Reporter reporter;
+                  reporter.attach(surf);
+                  reporter.setParams(Z3i::l2Metric, meancurvature , convFunc, re/h);
+
+                  delete range;
+                  range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                  ibegin = range->begin();
+                  iend = range->end();  
+                  reporter.init(h, ibegin, iend);
+                  
+                  char full_filename[360];
+                  sprintf( full_filename, "%s%s", filename.c_str(), "_IISurfaceArea_mean.dat" );
+                  std::ofstream file( full_filename );
+                  file << "# h = " << h << std::endl;
+                  file << "# Mean Curvature estimation from surfacic integral invariant and true normal vectors" << std::endl;
+                  file << "# computed Euclidean kernel radius = " << re << std::endl;
+                  std::ostream_iterator< double > out_it_iiarea_mean( file, "\n" );
+                  
+                  range = new VisitorRange( new Visitor( surf, *surf.begin() ));
+                  ibegin = range->begin();
+                  iend = range->end();
+
+                  reporter.eval(ibegin, iend , out_it_iiarea_mean);
+                  double IIArea = c.stopClock();
+                  file << "# time = " << IIArea << std::endl;
+                  file.close();
+                  delete range;
+                  
+                  
+                  trace.endBlock();
+                }
+                
             }
         }
     }
@@ -1109,7 +1285,9 @@ int main( int argc, char** argv )
             ("noise,n",  po::value<double>()->default_value(0.0), "Level of noise to perturb the shape" )
             ("lambda,l",  po::value< bool >()->default_value( false ), "Use the shape to get a better approximation of the surface (optional)" )
             ("properties",  po::value<std::string>()->default_value("110"), "the i-th property is disabled iff there is a 0 at position i" )
-            ("estimators,e",  po::value< std::string >()->default_value("110"), "the i-th estimator is disabled iff there is a 0 at position i" );
+            ("estimators,e",  po::value< std::string >()->default_value("1100"), "the i-th estimator is disabled iff there is a 0 at position i" )
+      ("IIsurface",  po::value<std::string>()->default_value("100"), "Special parameter for Integral Invariant Mean Curvature from surface area." )
+            ;
 
 
     bool parseOK = true;
@@ -1131,15 +1309,16 @@ int main( int argc, char** argv )
                     << "\t3dlocalEstimators --shape <shape> --h <h> --radius <radius> --estimators <binaryWord> --output <output>"<<std::endl
                     << std::endl
                     << "Below are the different available families of estimators: " << std::endl
-                    << "\t - Integral Invariant Mean" << std::endl
-                    << "\t - Integral Invariant Gaussian" << std::endl
-                    << "\t - Monge Jet Fitting Mean" << std::endl
-                    << "\t - Monge Jet Fitting Gaussian" << std::endl
+                    << "\t - True estimator (from implicit equation)" << std::endl
+                    << "\t - Integral Invariant" << std::endl
+                    << "\t - Monge Jet Fitting" << std::endl
+                    << "\t - Integral Invariant (from surface Area)" << std::endl
                     << std::endl
                     << "The i-th family of estimators is enabled if the i-th character of the binary word is not 0. "
-                    << "The default binary word is '1100'. This means that the first family of estimators, "
-                    << "ie. Integral Invariant, is enabled, whereas the next ones are disabled. "
-                    << "Below are the different available properties: " << std::endl
+                    << "The default binary word is '1100'. This means that TrueEstimator and IntegralInvariant are enabled"
+                    << "whereas the next ones  are disabled. "
+                    << std::endl
+                    << "For each estimator, different quantities can be estimated through properties: " << std::endl
                     << "\t - Mean Curvature" << std::endl
                     << "\t - Gaussian Curvature" << std::endl
                     << "\t - k1/k2" << std::endl
@@ -1154,7 +1333,7 @@ int main( int argc, char** argv )
 
 
     std::string file_export = vm["output"].as< std::string >();
-    int nb = 3;
+    int nb = 4;
     std::string options = vm["estimators"].as< std::string >();
     if (options.size() < nb)
     {
@@ -1181,6 +1360,9 @@ int main( int argc, char** argv )
         trace.info() << std::endl;
         exit(1);
     }
+
+    std::string IIsurface = vm["IIsurface"].as<std::string>();
+    
 
     typedef Z3i::Space::RealPoint RealPoint;
     typedef Z3i::Space::RealPoint::Coordinate Ring;
@@ -1216,6 +1398,7 @@ int main( int argc, char** argv )
                 alpha,
                 options,
                 properties,
+                IIsurface,
                 lambda_optimized,
                 noiseLevel );
 
